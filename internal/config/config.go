@@ -26,13 +26,23 @@ type ModelPricing struct {
 }
 
 var Pricing = map[string]ModelPricing{
-	"claude-opus-4-6":            {Input: 15.00, Output: 75.00, CacheRead: 1.875, CacheCreate: 18.75},
-	"claude-opus-4-5-20251101":   {Input: 15.00, Output: 75.00, CacheRead: 1.875, CacheCreate: 18.75},
+	// Opus 4.6 / 4.5 — $5/$25 per MTok
+	"claude-opus-4-6":          {Input: 5.00, Output: 25.00, CacheRead: 0.50, CacheCreate: 6.25},
+	"claude-opus-4-5-20251101": {Input: 5.00, Output: 25.00, CacheRead: 0.50, CacheCreate: 6.25},
+	// Opus 4.1 / 4 — $15/$75 per MTok
+	"claude-opus-4-1-20250414": {Input: 15.00, Output: 75.00, CacheRead: 1.50, CacheCreate: 18.75},
+	"claude-opus-4-20250414":   {Input: 15.00, Output: 75.00, CacheRead: 1.50, CacheCreate: 18.75},
+	// Sonnet 4.6 / 4.5 / 4 — $3/$15 per MTok
 	"claude-sonnet-4-6":          {Input: 3.00, Output: 15.00, CacheRead: 0.30, CacheCreate: 3.75},
-	"claude-haiku-4-5-20251001":  {Input: 0.80, Output: 4.00, CacheRead: 0.08, CacheCreate: 1.00},
+	"claude-sonnet-4-5-20241022": {Input: 3.00, Output: 15.00, CacheRead: 0.30, CacheCreate: 3.75},
+	"claude-sonnet-4-20250514":   {Input: 3.00, Output: 15.00, CacheRead: 0.30, CacheCreate: 3.75},
+	// Haiku 4.5 — $1/$5 per MTok
+	"claude-haiku-4-5-20251001": {Input: 1.00, Output: 5.00, CacheRead: 0.10, CacheCreate: 1.25},
+	// Haiku 3.5 — $0.80/$4 per MTok
+	"claude-haiku-3-5-20241022": {Input: 0.80, Output: 4.00, CacheRead: 0.08, CacheCreate: 1.00},
 }
 
-var DefaultPricing = ModelPricing{Input: 15.00, Output: 75.00, CacheRead: 1.875, CacheCreate: 18.75}
+var DefaultPricing = ModelPricing{Input: 5.00, Output: 25.00, CacheRead: 0.50, CacheCreate: 6.25}
 
 func GetPricing(model string) ModelPricing {
 	if p, ok := Pricing[model]; ok {
