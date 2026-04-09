@@ -1,12 +1,18 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type viewState int
@@ -16,19 +22,14 @@ const (
 	viewTimeframe
 	viewAI
 	viewCustomDate
+	viewRunning
+	viewOutput
 )
 
 // Command represents an analytics command exposed to the TUI.
 type Command struct {
 	Cmd, Name, Desc string
 	Fn              func([]string)
-}
-
-// Selection is the result returned after the TUI exits.
-type Selection struct {
-	Command *Command
-	Args    []string
-	Quit    bool
 }
 
 type timeframeItem struct {
@@ -46,6 +47,11 @@ var timeframes = []timeframeItem{
 	{"Custom date", nil, true},
 }
 
+// commandDoneMsg is sent when a command finishes executing.
+type commandDoneMsg struct {
+	output string
+}
+
 type model struct {
 	state     viewState
 	commands  []Command
@@ -54,9 +60,11 @@ type model struct {
 	aiCursor  int
 	selected  *Command
 	args      []string
-	selection Selection
 	dateInput textinput.Model
 	dateErr   string
+	spinner   spinner.Model
+	viewport  viewport.Model
+	output    string
 	width     int
 	height    int
 }
@@ -67,61 +75,149 @@ func newModel(commands []Command) model {
 	ti.CharLimit = 10
 	ti.Width = 12
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(colorCyan)
+
 	return model{
-		commands: commands,
-		state:    viewMenu,
+		commands:  commands,
+		state:     viewMenu,
 		dateInput: ti,
-		width:    80,
-		height:   24,
+		spinner:   s,
+		width:     80,
+		height:    24,
 	}
 }
 
-// Run starts the TUI and returns the user's selection.
-func Run(commands []Command) Selection {
+// Run starts the interactive TUI. Blocks until the user quits.
+func Run(commands []Command) {
 	m := newModel(commands)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return Selection{Quit: true}
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 	}
-	if fm, ok := finalModel.(model); ok {
-		return fm.selection
-	}
-	return Selection{Quit: true}
 }
 
 func (m model) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.state == viewCustomDate {
-		return m.updateCustomDate(msg)
-	}
+// ── Update ─────────────────────────────────────────────────────────────────
 
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.state == viewOutput {
+			m.viewport.Width = m.width
+			m.viewport.Height = m.height - 4
+		}
 		return m, nil
 
+	case commandDoneMsg:
+		m.output = msg.output
+		h := m.height - 4
+		if h < 5 {
+			h = 5
+		}
+		m.viewport = viewport.New(m.width, h)
+		m.viewport.SetContent(m.output)
+		m.state = viewOutput
+		return m, nil
+	}
+
+	switch m.state {
+	case viewCustomDate:
+		return m.updateCustomDate(msg)
+	case viewRunning:
+		return m.updateRunning(msg)
+	case viewOutput:
+		return m.updateOutput(msg)
+	default:
+		return m.updateNav(msg)
+	}
+}
+
+func (m model) updateNav(msg tea.Msg) (tea.Model, tea.Cmd) {
+	km, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch km.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "up", "k":
+		m.moveUp()
+	case "down", "j":
+		m.moveDown()
+	case "enter":
+		return m.handleEnter()
+	case "esc":
+		return m.handleEsc()
+	}
+	return m, nil
+}
+
+func (m model) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.selection = Selection{Quit: true}
+		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
-		case "up", "k":
-			m.moveUp()
-		case "down", "j":
-			m.moveDown()
-		case "enter":
-			return m.handleEnter()
-		case "esc":
-			return m.handleEsc()
 		}
 	}
 	return m, nil
 }
+
+func (m model) updateOutput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok {
+		switch km.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.state = viewMenu
+			return m, nil
+		}
+	}
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateCustomDate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok {
+		switch km.String() {
+		case "esc":
+			m.state = viewTimeframe
+			m.dateErr = ""
+			return m, nil
+		case "ctrl+c":
+			return m, tea.Quit
+		case "enter":
+			date := m.dateInput.Value()
+			if _, err := time.Parse("2006-01-02", date); err != nil {
+				m.dateErr = "Invalid format. Use YYYY-MM-DD"
+				return m, nil
+			}
+			m.args = []string{date}
+			if m.selected.Cmd == "digest" {
+				m.aiCursor = 0
+				m.state = viewAI
+				return m, nil
+			}
+			return m.startCommand()
+		}
+	}
+	var cmd tea.Cmd
+	m.dateInput, cmd = m.dateInput.Update(msg)
+	return m, cmd
+}
+
+// ── Navigation helpers ─────────────────────────────────────────────────────
 
 func (m *model) moveUp() {
 	switch m.state {
@@ -178,16 +274,14 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.aiCursor = 0
 			m.state = viewAI
 		} else {
-			m.selection = Selection{Command: m.selected, Args: m.args}
-			return m, tea.Quit
+			return m.startCommand()
 		}
 
 	case viewAI:
 		if m.aiCursor == 1 {
 			m.args = append(m.args, "--ai")
 		}
-		m.selection = Selection{Command: m.selected, Args: m.args}
-		return m, tea.Quit
+		return m.startCommand()
 	}
 	return m, nil
 }
@@ -199,48 +293,60 @@ func (m model) handleEsc() (tea.Model, tea.Cmd) {
 	case viewAI:
 		m.state = viewTimeframe
 	case viewMenu:
-		m.selection = Selection{Quit: true}
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-func (m model) updateCustomDate(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			m.state = viewTimeframe
-			m.dateErr = ""
-			return m, nil
-		case "ctrl+c":
-			m.selection = Selection{Quit: true}
-			return m, tea.Quit
-		case "enter":
-			date := m.dateInput.Value()
-			if _, err := time.Parse("2006-01-02", date); err != nil {
-				m.dateErr = "Invalid format. Use YYYY-MM-DD"
-				return m, nil
-			}
-			m.args = []string{date}
-			if m.selected.Cmd == "digest" {
-				m.aiCursor = 0
-				m.state = viewAI
-			} else {
-				m.selection = Selection{Command: m.selected, Args: m.args}
-				return m, tea.Quit
-			}
-			return m, nil
-		}
+func (m model) startCommand() (tea.Model, tea.Cmd) {
+	m.state = viewRunning
+	return m, tea.Batch(
+		m.spinner.Tick,
+		executeCommand(m.selected.Fn, m.args),
+	)
+}
+
+// ── Command execution ──────────────────────────────────────────────────────
+
+func executeCommand(fn func([]string), args []string) tea.Cmd {
+	return func() tea.Msg {
+		output := captureStdout(func() { fn(args) })
+		return commandDoneMsg{output: output}
 	}
-	var cmd tea.Cmd
-	m.dateInput, cmd = m.dateInput.Update(msg)
-	return m, cmd
+}
+
+func captureStdout(fn func()) string {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	ch := make(chan string)
+	go func() {
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		ch <- buf.String()
+	}()
+
+	fn()
+	w.Close()
+	os.Stdout = old
+	return <-ch
 }
 
 // ── View ───────────────────────────────────────────────────────────────────
 
 func (m model) View() string {
+	switch m.state {
+	case viewOutput:
+		return m.viewOutputScreen()
+	case viewRunning:
+		return m.viewRunningScreen()
+	default:
+		return m.viewMenuScreen()
+	}
+}
+
+func (m model) viewMenuScreen() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
@@ -261,7 +367,6 @@ func (m model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.viewHelp())
 	b.WriteString("\n")
-
 	return b.String()
 }
 
@@ -311,14 +416,12 @@ func (m model) viewTimeframe() string {
 
 func (m model) viewAI() string {
 	var b strings.Builder
-	tfLabel := ""
+	tfLabel := "Today"
 	if len(m.args) > 0 {
-		tfLabel = " — " + m.args[0]
-	} else {
-		tfLabel = " — Today"
+		tfLabel = m.args[0]
 	}
 	b.WriteString("  ")
-	b.WriteString(sectionStyle.Render(m.selected.Name + tfLabel))
+	b.WriteString(sectionStyle.Render(m.selected.Name + " — " + tfLabel))
 	b.WriteString("\n\n")
 	b.WriteString("  ")
 	b.WriteString(subtleStyle.Render("AI Analysis:"))
@@ -355,6 +458,31 @@ func (m model) viewCustomDate() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func (m model) viewRunningScreen() string {
+	return fmt.Sprintf("\n\n  %s Running %s...\n", m.spinner.View(), m.selected.Name)
+}
+
+func (m model) viewOutputScreen() string {
+	// Header bar
+	title := fmt.Sprintf(" 📊 %s ", m.selected.Name)
+	pct := fmt.Sprintf(" %3.0f%% ", m.viewport.ScrollPercent()*100)
+	gap := m.width - lipgloss.Width(title) - lipgloss.Width(pct)
+	if gap < 0 {
+		gap = 0
+	}
+	header := headerBarStyle.Render(title) +
+		headerBarStyle.Render(strings.Repeat(" ", gap)) +
+		scrollPctStyle.Render(pct)
+
+	// Footer
+	help := helpKeyStyle.Render("↑/↓") + helpStyle.Render(" scroll") + "  •  " +
+		helpKeyStyle.Render("pgup/pgdn") + helpStyle.Render(" page") + "  •  " +
+		helpKeyStyle.Render("esc") + helpStyle.Render(" menu") + "  •  " +
+		helpKeyStyle.Render("q") + helpStyle.Render(" quit")
+
+	return header + "\n" + m.viewport.View() + "\n" + help
 }
 
 func (m model) viewHelp() string {

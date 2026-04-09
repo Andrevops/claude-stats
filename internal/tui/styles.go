@@ -53,6 +53,17 @@ var (
 	errorStyle = lipgloss.NewStyle().
 			Foreground(colorError)
 
+	// Output viewport header
+	headerBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("62")).
+			Padding(0, 1).
+			Bold(true)
+
+	scrollPctStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Background(lipgloss.Color("62"))
+
 	// Footer help
 	helpStyle = lipgloss.NewStyle().
 			Foreground(colorSubtle)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,17 +39,7 @@ func interactiveMenu() {
 	for i, c := range allCommands {
 		cmds[i] = tui.Command{Cmd: c.cmd, Name: c.name, Desc: c.desc, Fn: c.fn}
 	}
-
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		sel := tui.Run(cmds)
-		if sel.Quit {
-			break
-		}
-		sel.Command.Fn(sel.Args)
-		fmt.Print("\n  Press Enter to continue...")
-		reader.ReadString('\n')
-	}
+	tui.Run(cmds)
 }
 
 func printHelp() {
