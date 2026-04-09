@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.0 (2026-04-09)
+
+### Features
+
+- replace interactive menu with BubbleTea TUI
+
+### Bug Fixes
+
+- correct token pricing for Opus 4.5/4.6 and Haiku 4.5
+
+[Full changelog](https://github.com/Andrevops/claude-stats/compare/v0.4.1...v0.5.0)
+
 ## v0.4.1 (2026-04-09)
 
 ### Bug Fixes
