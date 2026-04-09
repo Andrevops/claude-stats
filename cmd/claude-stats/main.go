@@ -11,19 +11,11 @@ import (
 	"strings"
 
 	"github.com/Andrevops/claude-stats/internal/commands"
+	"github.com/Andrevops/claude-stats/internal/tui"
 )
 
 // version is set at build time via -ldflags.
 var version = "dev"
-
-const (
-	blue  = "\033[1;34m"
-	cyan  = "\033[0;36m"
-	green = "\033[0;32m"
-	dim   = "\033[2m"
-	bold  = "\033[1m"
-	reset = "\033[0m"
-)
 
 type command struct {
 	cmd, name, desc string
@@ -43,103 +35,22 @@ var allCommands = []command{
 	{"trends", "Trends", "Week-over-week or month-over-month comparison with deltas", commands.Trends},
 }
 
-func showMenu() {
-	fmt.Printf("\n%s", bold)
-	fmt.Println("  ╔═══════════════════════════════════════════════════╗")
-	fmt.Println("  ║            Claude Code Analytics Suite            ║")
-	fmt.Println("  ║                   by Andrevops                    ║")
-	fmt.Println("  ╚═══════════════════════════════════════════════════╝")
-	fmt.Printf("%s\n", reset)
-
-	for i, c := range allCommands {
-		fmt.Printf("  %s%d)%s %s%s%s  %s(%s)%s\n",
-			blue, i+1, reset, bold, c.name, reset, dim, c.cmd, reset)
-		fmt.Printf("     %s%s%s\n\n", cyan, c.desc, reset)
-	}
-
-	fmt.Printf("  %s%s%s\n", dim, strings.Repeat("─", 49), reset)
-	fmt.Printf("  %sq)%s Quit\n\n", blue, reset)
-}
-
-func pickTimeframe(reader *bufio.Reader) []string {
-	fmt.Printf("\n  %sTimeframe:%s\n", bold, reset)
-	fmt.Printf("  %s1)%s Today       %s4)%s Last 30 days\n", green, reset, green, reset)
-	fmt.Printf("  %s2)%s Yesterday   %s5)%s All time\n", green, reset, green, reset)
-	fmt.Printf("  %s3)%s Last 7 days %s6)%s Custom date\n\n", green, reset, green, reset)
-
-	fmt.Print("  Pick [1-6]: ")
-	tf, _ := readLine(reader)
-
-	switch strings.TrimSpace(tf) {
-	case "", "1":
-		return nil
-	case "2":
-		return []string{"--yesterday"}
-	case "3":
-		return []string{"--week"}
-	case "4":
-		return []string{"--month"}
-	case "5":
-		return []string{"--all"}
-	case "6":
-		fmt.Print("  Enter date (YYYY-MM-DD): ")
-		date, _ := readLine(reader)
-		return []string{strings.TrimSpace(date)}
-	}
-	return nil
-}
-
 func interactiveMenu() {
+	cmds := make([]tui.Command, len(allCommands))
+	for i, c := range allCommands {
+		cmds[i] = tui.Command{Cmd: c.cmd, Name: c.name, Desc: c.desc, Fn: c.fn}
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		showMenu()
-		fmt.Printf("  Pick a tool [1-%d, q]: ", len(allCommands))
-		choice, err := readLine(reader)
-		if err != nil {
-			fmt.Println()
+		sel := tui.Run(cmds)
+		if sel.Quit {
 			break
 		}
-		choice = strings.TrimSpace(choice)
-
-		if strings.ToLower(choice) == "q" {
-			fmt.Println()
-			break
-		}
-
-		idx := 0
-		fmt.Sscanf(choice, "%d", &idx)
-		if idx < 1 || idx > len(allCommands) {
-			fmt.Println("  Invalid choice")
-			continue
-		}
-
-		c := allCommands[idx-1]
-		extraArgs := pickTimeframe(reader)
-		if extraArgs == nil {
-			extraArgs = []string{}
-		}
-
-		if c.cmd == "digest" {
-			fmt.Printf("\n  %sAI Analysis:%s\n", bold, reset)
-			fmt.Printf("  %s1)%s Data only   %s2)%s Data + AI summary\n\n", green, reset, green, reset)
-			fmt.Print("  Pick [1-2]: ")
-			aiChoice, _ := readLine(reader)
-			if strings.TrimSpace(aiChoice) == "2" {
-				extraArgs = append(extraArgs, "--ai")
-			}
-		}
-
-		fmt.Printf("\n  %sRunning %s...%s\n\n", dim, c.name, reset)
-		c.fn(extraArgs)
-		fmt.Println()
-		fmt.Print("  Press Enter to continue...")
-		readLine(reader)
+		sel.Command.Fn(sel.Args)
+		fmt.Print("\n  Press Enter to continue...")
+		reader.ReadString('\n')
 	}
-}
-
-func readLine(reader *bufio.Reader) (string, error) {
-	line, err := reader.ReadString('\n')
-	return strings.TrimRight(line, "\r\n"), err
 }
 
 func printHelp() {
