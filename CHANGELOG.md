@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.0 (2026-04-09)
+
+### Features
+
+- add scrollable viewport with spinner for command output
+
+[Full changelog](https://github.com/Andrevops/claude-stats/compare/v0.5.0...v0.6.0)
+
 ## v0.5.0 (2026-04-09)
 
 ### Features
