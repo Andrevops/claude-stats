@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.7.0 (2026-04-10)
+
+### Features
+
+- animate individual SVG elements — bouncing bars, dynamic trend line, sparkles
+
+### Bug Fixes
+
+- regenerate animated icon with transparent background
+
+### Other
+
+- docs: add Andrevops ecosystem section
+- docs: add icon and animated header to README
+
+[Full changelog](https://github.com/Andrevops/claude-stats/compare/v0.6.0...v0.7.0)
+
 ## v0.6.0 (2026-04-09)
 
 ### Features
