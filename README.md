@@ -201,6 +201,29 @@ xxd -r -p checksums.txt.sig | openssl pkeyutl -verify -pubin -inkey public_key.p
 
 No runtime dependencies — single static binary.
 
+## Andrevops Ecosystem
+
+claude-stats is part of the [Andrevops](https://github.com/Andrevops) developer tooling suite.
+
+| Tool | Relationship |
+|------|-------------|
+| [claude-sandbox](https://github.com/Andrevops/claude-sandbox) | Sessions launched via claude-sandbox's `yolo` command are stored in `~/.claude/projects/` — exactly what claude-stats reads and analyzes |
+| [Diffchestrator](https://github.com/Andrevops/diffchestrator) | Claude Code sessions launched from Diffchestrator's per-repo terminals generate the session data claude-stats reports on |
+| [Epic-Lens](https://github.com/Andrevops/Epic-Lens) | Tracks the Jira epics and MRs produced by the sessions claude-stats measures |
+| [Makestro](https://github.com/Andrevops/Makestro) | Complementary — run `make` targets from VS Code while claude-stats tracks the Claude sessions alongside |
+
+### Workflow
+
+```
+Claude Code session (via Diffchestrator / claude-sandbox)
+        │
+        ▼
+  ~/.claude/projects/   ← session JSONL files
+        │
+        ▼
+  claude-stats tokens / tools / efficiency / report
+```
+
 ## License
 
 MIT
