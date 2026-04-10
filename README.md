@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/icon-animated.gif" alt="claude-stats" width="128" />
+</p>
+
 # claude-stats
 
 Analytics suite for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — track your token usage, tool patterns, session health, productivity, and more.
