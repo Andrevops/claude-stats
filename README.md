@@ -224,6 +224,12 @@ Claude Code session (via Diffchestrator / claude-sandbox)
   claude-stats tokens / tools / efficiency / report
 ```
 
+## Collaboration
+
+### [@AgusRdz](https://github.com/AgusRdz)
+
+Rewrote claude-stats from Python to Go — porting all 9 analytics commands into a single static binary with cross-platform install scripts, CI/CD for 6 platform targets, and Docker support. Fixed several Python-era bugs including an off-by-one in sessions, double-width emoji display issues, and Windows binary-locking during self-updates.
+
 ## License
 
 MIT
