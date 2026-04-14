@@ -148,20 +148,40 @@ func selfUpdate() {
 		os.Exit(1)
 	}
 
-	// Atomic replace
+	// Replace the binary.
+	// On Windows, a running executable cannot be overwritten directly, but it
+	// can be renamed (moved aside). We rename the current binary to .old first,
+	// then move the new binary into place. The .old file is cleaned up below.
 	if err := os.Rename(tmpPath, exe); err != nil {
-		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "replace failed: %v\n", err)
-		os.Exit(1)
+		if runtime.GOOS != "windows" {
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "replace failed: %v\n", err)
+			os.Exit(1)
+		}
+		oldExe := exe + ".old"
+		os.Remove(oldExe) // remove any leftover from a previous update
+		if err2 := os.Rename(exe, oldExe); err2 != nil {
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "replace failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err2 := os.Rename(tmpPath, exe); err2 != nil {
+			os.Rename(oldExe, exe) // restore original
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "replace failed: %v\n", err2)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Printf("\nupdated to %s\n", release.TagName)
 }
 
 func main() {
-	// Disable ANSI on Windows if not in a capable terminal
+	// Clean up any leftover .old binary from a previous Windows self-update.
 	if runtime.GOOS == "windows" {
-		// Colors work fine in Windows Terminal / Git Bash; keep them
+		if exe, err := os.Executable(); err == nil {
+			os.Remove(exe + ".old")
+		}
 	}
 
 	if len(os.Args) < 2 {

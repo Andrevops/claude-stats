@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
-$Repo       = "Andrevops/claude-stats"
+$Repo       = "AgusRdz/claude-stats"
 $InstallDir = if ($env:CLAUDE_STATS_INSTALL_DIR) {
     $env:CLAUDE_STATS_INSTALL_DIR
 } else {

@@ -111,7 +111,7 @@ release-build:
 .PHONY: release-docker
 release-docker:
 	@mkdir -p dist
-	docker run --rm \
+	MSYS_NO_PATHCONV=1 docker run --rm \
 		-v "$(CURDIR):/src" -w /src \
 		-e CGO_ENABLED=0 \
 		golang:1.21-alpine \

@@ -140,11 +140,23 @@ func ParseTS(ts string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// TZLabel returns the local timezone abbreviation.
+// TZLabel returns the local timezone label as a UTC offset string.
+// Zone() abbreviations are unreliable on Windows (returns "CST" even during CDT),
+// so we derive the label from the actual numeric offset instead.
 func TZLabel() string {
-	now := time.Now()
-	name, _ := now.Zone()
-	return name
+	_, offset := time.Now().Zone()
+	h := offset / 3600
+	m := (offset % 3600) / 60
+	if m < 0 {
+		m = -m
+	}
+	if offset == 0 {
+		return "UTC"
+	}
+	if m == 0 {
+		return fmt.Sprintf("UTC%+d", h)
+	}
+	return fmt.Sprintf("UTC%+d:%02d", h, m)
 }
 
 // DateSet converts a date slice to a lookup map.

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="Andrevops/claude-stats"
+REPO="AgusRdz/claude-stats"
 
 # Detect OS
 OS="$(uname -s)"

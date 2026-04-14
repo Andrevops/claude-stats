@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -607,11 +608,24 @@ func buildAIContext(data *digestData, label string) string {
 	return strings.Join(lines, "\n")
 }
 
-func runAISummary(context, label string) {
+func runAISummary(data, label string) {
 	format.Header("🤖  AI ANALYSIS", "─")
 	fmt.Println()
-	fmt.Println("  Generating AI summary...")
-	fmt.Println()
+	fmt.Print("  Generating AI summary")
+	stop := make(chan struct{})
+	go func() {
+		frames := []string{".", "..", "..."}
+		i := 0
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(500 * time.Millisecond):
+				fmt.Printf("\r  Generating AI summary%-3s", frames[i%len(frames)])
+				i++
+			}
+		}
+	}()
 
 	period := "today"
 	switch {
@@ -642,7 +656,7 @@ STANDUP: 2-3 sentence ready-to-paste standup for Slack.
 Keep under 150 words total.
 
 DATA:
-%s`, period, context)
+%s`, period, data)
 
 	env := os.Environ()
 	filtered := env[:0]
@@ -652,10 +666,20 @@ DATA:
 		}
 	}
 
-	cmd := exec.Command("claude", "-p", "--model", "opus")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "opus")
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Env = filtered
 	out, err := cmd.Output()
+	close(stop)
+	fmt.Print("\r\033[K") // clear the spinner line
+	if ctx.Err() == context.DeadlineExceeded {
+		fmt.Println("  AI summary timed out after 60s. Try again or skip with option 1.")
+		fmt.Println()
+		return
+	}
 	if err != nil {
 		fmt.Printf("  Could not generate AI summary: %v\n", err)
 		fmt.Println()
