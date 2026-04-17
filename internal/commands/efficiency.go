@@ -50,8 +50,8 @@ func Efficiency(args []string) {
 		session.ScanLines(f, func(line session.LogLine) {
 			msgType := line.Type
 
-			if msgType == "human" || msgType == "user" {
-				// Flush previous turn classification
+			// Real user turn: count it and flush the prior assistant turn.
+			if session.IsUserTurn(line) {
 				if inAssistantTurn {
 					switch {
 					case turnHasError:
@@ -67,7 +67,8 @@ func Efficiency(args []string) {
 
 				totalHumanTurns++
 				p.turns++
-
+			} else if msgType == "user" {
+				// Tool-result envelope — count errors but do not inflate turns.
 				for _, tr := range session.ParseToolResults(line.Message) {
 					if tr.IsError {
 						totalErrors++
@@ -153,24 +154,13 @@ func Efficiency(args []string) {
 		errRate = float64(totalErrors) / float64(totalToolCalls) * 100
 	}
 
-	// ── Summary
-	format.Header(fmt.Sprintf("⚡  EFFICIENCY & PRODUCTIVITY — %s", label), "═")
-	fmt.Printf(`
-  Turns (user messages):  %s
-  Tool calls:             %s (%.1f/turn)
-  Net lines produced:     %s
-  Files touched:          %d
-
-  ┌─────────────────────────────────────────┐
-  │  LINES PER TURN:           %10.1f   │
-  │  FILES PER TURN:           %10.2f   │
-  │  OUTPUT TOKENS PER TURN:   %10.0f   │
-  │  ERROR RATE:               %9.1f%%   │
-  └─────────────────────────────────────────┘`+"\n",
-		format.Fmt(totalTurns),
-		format.Fmt(totalToolCalls), toolsPerTurn,
-		format.Fmt(netLines),
-		len(filesTouched),
+	format.Header(fmt.Sprintf("⚡  EFFICIENCY — %s", label), "═")
+	fmt.Printf("\n  %-12s%-14s %-12s%s (%.1f/turn)\n",
+		"Turns", format.Fmt(totalTurns),
+		"Tools", format.Fmt(totalToolCalls), toolsPerTurn)
+	fmt.Printf("  %-12s%-14s %-12s%d\n",
+		"Net lines", format.Fmt(netLines), "Files", len(filesTouched))
+	fmt.Printf("\n  %.1f lines/turn · %.2f files/turn · %.0f out-tokens/turn · %.1f%% errors\n",
 		linesPerTurn, filesPerTurn,
 		float64(totalOutputTokens)/float64(totalTurns),
 		errRate,

@@ -180,6 +180,16 @@ func suggestPathPattern(tool, fp string) string {
 }
 
 func Prompts(args []string) {
+	detailed := false
+	filtered := []string{}
+	for _, a := range args {
+		if a == "--detailed" || a == "-d" {
+			detailed = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	args = filtered
 	targetDates, label := dates.ParseArgs(args)
 	if label == "" {
 		return
@@ -274,21 +284,18 @@ func Prompts(args []string) {
 		return
 	}
 
-	// ── Summary
-	format.Header(fmt.Sprintf("🔐  PERMISSION PROMPT ANALYSIS — %s", label), "═")
+	format.Header(fmt.Sprintf("🔐  PERMISSION PROMPTS — %s", label), "═")
 	autoPct := float64(totalAuto) / float64(total) * 100
 	promptPct := float64(totalPrompted) / float64(total) * 100
-	fmt.Printf(`
-  Total tool calls:  %s
-  Auto-allowed:      %8s (%.0f%%)  %s
-  Required prompt:   %8s (%.0f%%)  %s`+"\n",
+	fmt.Printf("\n  Total %s calls · Auto %s (%.0f%%) · Prompted %s (%.0f%%)\n",
 		format.Fmt(total),
-		format.Fmt(totalAuto), autoPct, format.Bar(float64(totalAuto), float64(total), 30),
-		format.Fmt(totalPrompted), promptPct, format.Bar(float64(totalPrompted), float64(total), 30),
-	)
+		format.Fmt(totalAuto), autoPct,
+		format.Fmt(totalPrompted), promptPct)
+	fmt.Printf("  Auto      %s\n", format.Bar(float64(totalAuto), float64(total), 40))
+	fmt.Printf("  Prompted  %s\n", format.Bar(float64(totalPrompted), float64(total), 40))
 
 	if totalPrompted == 0 {
-		fmt.Println("\n  🎉 Zero prompts! Your allowlist is perfectly tuned.\n")
+		fmt.Println("\n  🎉 Zero prompts! Your allowlist is perfectly tuned.")
 		return
 	}
 
@@ -356,8 +363,8 @@ func Prompts(args []string) {
 		}
 	}
 
-	// ── Edit/Write Paths
-	if len(editPrompted)+len(writePrompted) > 0 {
+	// ── Edit/Write Paths (detailed only — nuclear option below covers the signal)
+	if detailed && len(editPrompted)+len(writePrompted) > 0 {
 		format.Header("✏️  EDIT/WRITE PATHS REQUIRING PROMPTS", "─")
 		combined := map[string][2]int{} // [edit, write]
 		for p, c := range editPrompted {
@@ -403,8 +410,8 @@ func Prompts(args []string) {
 		}
 	}
 
-	// ── By Project
-	if len(projPrompted) > 1 {
+	// ── By Project (detailed only)
+	if detailed && len(projPrompted) > 1 {
 		format.Header("📁  PROMPTS BY PROJECT", "─")
 		type projE struct {
 			name   string
@@ -482,7 +489,7 @@ func Prompts(args []string) {
 	for k, v := range writeSugs {
 		allPathSugs[k] += v
 	}
-	if len(allPathSugs) > 0 {
+	if detailed && len(allPathSugs) > 0 {
 		fmt.Println("\n  Edit/Write paths:")
 		fmt.Printf("  %-58s %6s\n", "Pattern", "Saves")
 		fmt.Printf("  %s %s\n", repeat("─", 58), repeat("─", 6))

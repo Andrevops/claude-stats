@@ -185,6 +185,59 @@ func ParseToolResults(raw json.RawMessage) []ToolResult {
 	return results
 }
 
+// IsToolResultOnly returns true when a user message's content consists
+// solely of tool_result blocks (i.e., it is not a real user turn).
+// Works on the raw message envelope — `{"content": "..."}` or `{"content": [...]}`.
+func IsToolResultOnly(raw json.RawMessage) bool {
+	var env struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return false
+	}
+	if len(env.Content) == 0 {
+		return false
+	}
+	// String content is always a real user turn (plain text).
+	if env.Content[0] == '"' {
+		return false
+	}
+	var blocks []ContentBlock
+	if err := json.Unmarshal(env.Content, &blocks); err != nil {
+		return false
+	}
+	if len(blocks) == 0 {
+		return false
+	}
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			return false
+		}
+	}
+	return true
+}
+
+// IsUserTurn returns true for a user line that represents an actual user
+// input (not a tool_result response).
+func IsUserTurn(line LogLine) bool {
+	if line.Type != "user" {
+		return false
+	}
+	return !IsToolResultOnly(line.Message)
+}
+
+// IsAssistant returns true for assistant-authored lines.
+func IsAssistant(line LogLine) bool {
+	return line.Type == "assistant"
+}
+
+// IsConversation returns true for lines that are part of the visible
+// conversation stream — user turns or assistant messages. Tool-result
+// envelopes and bookkeeping lines (system, attachment, ...) are excluded.
+func IsConversation(line LogLine) bool {
+	return IsAssistant(line) || IsUserTurn(line)
+}
+
 func ParseBashInput(raw json.RawMessage) BashInput {
 	var v BashInput
 	_ = json.Unmarshal(raw, &v)

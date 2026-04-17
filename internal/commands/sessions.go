@@ -66,20 +66,14 @@ func Sessions(args []string) {
 	}
 	avgCtx /= float64(len(sessionList))
 
-	format.Header(fmt.Sprintf("🏥  SESSION HEALTH ANALYSIS — %s", label), "═")
-	fmt.Printf(`
-  Sessions: %-12d Total turns:   %s
-  Duration: %-12s Avg/session:   %s
-
-  Total messages:    %-12s Total tools:   %s
-  Total errors:      %-12s Error rate:    %.1f%%
-  Avg context/turn:  %s`+"\n",
-		len(sessionList), format.Fmt(totalTurns),
-		format.FmtDuration(totalDuration), format.FmtDuration(avgDuration),
-		format.Fmt(totalMsgs), format.Fmt(totalTools),
-		format.Fmt(totalErrors), errorRate(totalErrors, totalTools),
-		format.FmtTokens(int(avgCtx)),
-	)
+	format.Header(fmt.Sprintf("🏥  SESSION HEALTH — %s", label), "═")
+	fmt.Printf("\n  %-10s%-16d %-10s%s\n",
+		"Sessions", len(sessionList), "Turns", format.Fmt(totalTurns))
+	fmt.Printf("  %-10s%-16s %-10s%s (avg %s)\n",
+		"Messages", format.Fmt(totalMsgs), "Active", format.FmtDuration(totalDuration), format.FmtDuration(avgDuration))
+	fmt.Printf("  %-10s%-16s %-10s%s (%.1f%%)\n",
+		"Tools", format.Fmt(totalTools), "Errors", format.Fmt(totalErrors), errorRate(totalErrors, totalTools))
+	fmt.Printf("  %-10s%s/turn\n", "Context", format.FmtTokens(int(avgCtx)))
 
 	// ── Session Table
 	format.Header("📋  ALL SESSIONS", "─")
@@ -215,39 +209,27 @@ func Sessions(args []string) {
 			lpm, errPct)
 	}
 
-	// ── Wasted Turns
-	format.Header("🗑️  WASTED TURNS (errors + retries)", "─")
-	fmt.Printf(`
-  Total tool calls:    %s
-  Total errors:        %s
-  Error rate:          %.1f%%
-
-  Each error wastes ~1 turn (the failed attempt) plus context tokens
-  for the retry. Over %d sessions, that's ~%d wasted turns.`+"\n",
-		format.Fmt(totalTools),
-		format.Fmt(totalErrors),
-		errorRate(totalErrors, totalTools),
-		len(sessionList), totalErrors)
-
+	// ── Worst error-rate sessions (only show if there's signal)
 	highErr := []*sessData{}
 	for _, s := range sessionList {
-		if s.toolCalls > 10 {
+		if s.toolCalls > 10 && float64(s.errors)/float64(s.toolCalls) > 0.1 {
 			highErr = append(highErr, s)
 		}
 	}
-	sort.Slice(highErr, func(i, j int) bool {
-		ri := float64(highErr[i].errors) / float64(highErr[i].toolCalls)
-		rj := float64(highErr[j].errors) / float64(highErr[j].toolCalls)
-		return ri > rj
-	})
-	if len(highErr) > 5 {
-		highErr = highErr[:5]
-	}
 	if len(highErr) > 0 {
-		fmt.Println("\n  Worst error-rate sessions:")
+		format.Header("🗑️  ERROR HOTSPOTS", "─")
+		sort.Slice(highErr, func(i, j int) bool {
+			ri := float64(highErr[i].errors) / float64(highErr[i].toolCalls)
+			rj := float64(highErr[j].errors) / float64(highErr[j].toolCalls)
+			return ri > rj
+		})
+		if len(highErr) > 5 {
+			highErr = highErr[:5]
+		}
+		fmt.Println()
 		for _, s := range highErr {
 			rate := float64(s.errors) / float64(s.toolCalls) * 100
-			fmt.Printf("    %s %5.1f%% (%d/%d)  %s\n",
+			fmt.Printf("  %s  %4.1f%% (%d/%d)  %s\n",
 				s.start.Format("2006-01-02"), rate, s.errors, s.toolCalls,
 				truncate(s.project, 35))
 		}
@@ -323,19 +305,26 @@ func parseSessionHealth(path string) *sessData {
 	}
 	filesTouched := map[string]bool{}
 
-	var lastTS time.Time
+	var prevTS time.Time
+	activeSecs := 0.0
 	session.ScanLines(path, func(line session.LogLine) {
 		localDT, ok := dates.ParseTS(line.Timestamp)
 		if ok {
 			if s.start.IsZero() {
 				s.start = localDT
 			}
-			lastTS = localDT
+			if !prevTS.IsZero() {
+				gap := localDT.Sub(prevTS).Seconds()
+				if gap > 0 && gap < 900 { // 15 min idle threshold
+					activeSecs += gap
+				}
+			}
+			prevTS = localDT
 		}
-		if line.Type == "human" || line.Type == "assistant" {
+		if session.IsConversation(line) {
 			s.messages++
 		}
-		if line.Type == "human" {
+		if session.IsUserTurn(line) {
 			s.humanMessages++
 		}
 		if line.Type == "assistant" {
@@ -385,9 +374,10 @@ func parseSessionHealth(path string) *sessData {
 		return nil
 	}
 
-	if !lastTS.IsZero() {
-		s.duration = lastTS.Sub(s.start).Seconds()
-	}
+	// Duration = active work time (sum of inter-message gaps under the idle
+	// threshold). Earlier versions used last-first span, which was misleading
+	// for resumed sessions spanning many days.
+	s.duration = activeSecs
 
 	if len(s.contextSizes) >= 4 {
 		q := len(s.contextSizes) / 4

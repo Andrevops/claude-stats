@@ -71,7 +71,6 @@ func Report(args []string) {
 	}
 	files := session.Find(targetDates, false)
 	bashPatterns := loadBashPatterns()
-	tzLabel := dates.TZLabel()
 
 	if len(files) == 0 {
 		fmt.Printf("\n  No sessions found for %s\n", label)
@@ -122,6 +121,8 @@ func Report(args []string) {
 		}
 
 		var sessFirstTS, sessLastTS time.Time
+		var sessPrevTS time.Time
+		sessActiveSecs := 0.0
 		sessMsgs := 0
 		var sessCtx []float64
 		pendingTools := map[string]string{}
@@ -130,7 +131,7 @@ func Report(args []string) {
 			localDT, ok := dates.ParseTS(line.Timestamp)
 			msgType := line.Type
 
-			if msgType == "human" || msgType == "assistant" || msgType == "user" {
+			if session.IsConversation(line) {
 				totalMessages++
 				sessMsgs++
 				p.messages++
@@ -140,12 +141,21 @@ func Report(args []string) {
 					if sessFirstTS.IsZero() {
 						sessFirstTS = localDT
 					}
+					if !sessPrevTS.IsZero() {
+						gap := localDT.Sub(sessPrevTS).Seconds()
+						if gap > 0 && gap < 900 {
+							sessActiveSecs += gap
+						}
+					}
+					sessPrevTS = localDT
 					sessLastTS = localDT
 				}
 			}
 
-			if msgType == "human" || msgType == "user" {
+			if session.IsUserTurn(line) {
 				totalTurns++
+			}
+			if msgType == "user" {
 				for _, tr := range session.ParseToolResults(line.Message) {
 					if tr.IsError {
 						tname := pendingTools[tr.ToolUseID]
@@ -154,7 +164,8 @@ func Report(args []string) {
 						p.errors++
 					}
 				}
-			} else if msgType == "assistant" {
+			}
+			if msgType == "assistant" {
 				msg, parsed := session.ParseAssistantMsg(line.Message)
 				if !parsed {
 					return
@@ -239,7 +250,7 @@ func Report(args []string) {
 		})
 
 		if !sessFirstTS.IsZero() && !sessLastTS.IsZero() && sessMsgs >= 4 && !isSub {
-			duration := sessLastTS.Sub(sessFirstTS).Seconds()
+			duration := sessActiveSecs
 			ctxGrowth := 0.0
 			if len(sessCtx) >= 4 {
 				q := len(sessCtx) / 4
@@ -324,40 +335,21 @@ func Report(args []string) {
 		return
 	}
 
-	// ── Header
-	fmt.Println()
-	fmt.Println("  ╔══════════════════════════════════════════════════════════════════╗")
-	fmt.Printf("  ║  📊  CLAUDE CODE — %-47s ║\n", truncate(label, 47))
-	fmt.Println("  ╚══════════════════════════════════════════════════════════════════╝")
-
-	format.Header("📋  OVERVIEW", "─")
+	format.Header(fmt.Sprintf("📊  CLAUDE CODE — %s", label), "═")
 	sessStr := fmt.Sprintf("%d", mainSessions)
 	if subagentCount > 0 {
 		sessStr = fmt.Sprintf("%d (+%d sub)", mainSessions, subagentCount)
 	}
-	fmt.Printf(`
-  Sessions:    %-18s  Projects:       %d
-  Messages:    %-18s  Turns:          %s
-  Tool calls:  %-18s  Errors:         %s (%.1f%%)
-  Files:       %-18d  Est. cost:      $%.0f
+	fmt.Printf("\n  %-14s%-20s %-14s%s\n", "Sessions", sessStr, "Projects", format.Fmt(len(proj)))
+	fmt.Printf("  %-14s%-20s %-14s%s\n", "Messages", format.Fmt(totalMessages), "Turns", format.Fmt(totalTurns))
+	fmt.Printf("  %-14s%-20s %-14s%s (%.1f%%)\n", "Tool calls", format.Fmt(totalToolCalls), "Errors", format.Fmt(totalErrors), errRate)
+	fmt.Printf("  %-14s%-20d %-14s$%.0f\n", "Files", len(filesTouched), "Est. cost", totalCost)
+	fmt.Printf("\n  Net lines %s  (+%s new · +%s edits · -%s)  · %.1f/turn\n",
+		format.Fmt(netLines),
+		format.Fmt(totalWritten), format.Fmt(totalAdded), format.Fmt(totalRemoved),
+		linesPerTurn)
 
-  ┌──────────────────────────────────────────────────────────┐
-  │  NET LINES PRODUCED:     %8s  (%-.1f lines/turn)    │
-  │  LINES WRITTEN (new):    %8s                          │
-  │  LINES ADDED (edits):    %8s                          │
-  │  LINES REMOVED:          %8s                          │
-  └──────────────────────────────────────────────────────────┘`+"\n",
-		sessStr, len(proj),
-		format.Fmt(totalMessages), format.Fmt(totalTurns),
-		format.Fmt(totalToolCalls), format.Fmt(totalErrors), errRate,
-		len(filesTouched), totalCost,
-		format.Fmt(netLines), linesPerTurn,
-		format.Fmt(totalWritten),
-		format.Fmt(totalAdded),
-		format.Fmt(totalRemoved),
-	)
-
-	// ── Daily Activity
+	// ── Daily Activity (tight, last 7 days only — heatmap covers full history)
 	if len(dailyMessages) > 1 {
 		format.Header("📅  DAILY ACTIVITY", "─")
 		var sortedDates []string
@@ -365,16 +357,16 @@ func Report(args []string) {
 			sortedDates = append(sortedDates, d)
 		}
 		sort.Strings(sortedDates)
+		if len(sortedDates) > 7 {
+			sortedDates = sortedDates[len(sortedDates)-7:]
+		}
 		maxDaily := 0
-		for _, msgs := range dailyMessages {
-			if msgs > maxDaily {
-				maxDaily = msgs
+		for _, d := range sortedDates {
+			if dailyMessages[d] > maxDaily {
+				maxDaily = dailyMessages[d]
 			}
 		}
-
-		fmt.Printf("\n  %-12s %6s %8s %s\n", "Date", "Msgs", "Output", "")
-		fmt.Printf("  %s %s %s %s\n",
-			repeat("─", 12), repeat("─", 6), repeat("─", 8), repeat("─", 25))
+		fmt.Println()
 		for _, date := range sortedDates {
 			msgs := dailyMessages[date]
 			out := dailyOutput[date]
@@ -384,9 +376,9 @@ func Report(args []string) {
 			if dt.Weekday() == time.Saturday || dt.Weekday() == time.Sunday {
 				weekend = " 🏖"
 			}
-			fmt.Printf("  %s %s %5d %8s %s%s\n",
+			fmt.Printf("  %s %s  %5d  %6s  %s%s\n",
 				date, day, msgs, format.FmtTokens(out),
-				format.Bar(float64(msgs), float64(maxDaily), 25), weekend)
+				format.Bar(float64(msgs), float64(maxDaily), 22), weekend)
 		}
 	}
 
@@ -493,108 +485,58 @@ func Report(args []string) {
 			format.Bar(float64(e.count), float64(maxBash), 12))
 	}
 
-	// ── Session Health
-	if len(sessionData) > 0 {
-		format.Header("🏥  SESSION HEALTH", "─")
-		var highGrowth []rptSession
-		for _, s := range sessionData {
-			if s.ctxGrowth > 200 {
-				highGrowth = append(highGrowth, s)
-			}
-		}
-		totalDur := 0.0
-		totalMsgsS := 0
-		for _, s := range sessionData {
-			totalDur += s.duration
-			totalMsgsS += s.messages
-		}
-		avgDur := totalDur / float64(len(sessionData))
-		avgMsgs := float64(totalMsgsS) / float64(len(sessionData))
-		hgIndicator := "✅"
-		if len(highGrowth) > 0 {
-			hgIndicator = "⚠️"
-		}
-		fmt.Printf(`
-  Sessions analyzed:   %d
-  Avg duration:        %s
-  Avg messages:        %.0f
-  High context growth: %d sessions (>200%% growth) %s`+"\n",
-			len(sessionData), format.FmtDuration(avgDur), avgMsgs,
-			len(highGrowth), hgIndicator)
-
-		if len(highGrowth) > 0 {
-			fmt.Println("\n  Bloated sessions:")
-			sort.Slice(highGrowth, func(i, j int) bool {
-				return highGrowth[i].ctxGrowth > highGrowth[j].ctxGrowth
-			})
-			for _, s := range highGrowth[:min3(len(highGrowth), 3)] {
-				dur := format.FmtDuration(s.duration)
-				fmt.Printf("    %s %5s +%.0f%%  %s\n",
-					s.start.Format("2006-01-02"), dur, s.ctxGrowth,
-					truncate(s.project, 35))
-			}
-		}
-	}
-
-	// ── Peak Hours
-	if len(hourly) > 0 {
-		format.Header(fmt.Sprintf("⏰  PEAK HOURS (%s)", tzLabel), "─")
-		type hourEntry struct {
-			h, count int
-		}
-		var hourList []hourEntry
-		for h, count := range hourly {
-			if count > 0 {
-				hourList = append(hourList, hourEntry{h, count})
-			}
-		}
-		sort.Slice(hourList, func(i, j int) bool { return hourList[i].count > hourList[j].count })
-		if len(hourList) > 6 {
-			hourList = hourList[:6]
-		}
-		peakHour := hourList[0].h
-		maxHour := hourList[0].count
-		sort.Slice(hourList, func(i, j int) bool { return hourList[i].h < hourList[j].h })
-
-		fmt.Println()
-		for _, e := range hourList {
-			peak := ""
-			if e.h == peakHour {
-				peak = " ← PEAK"
-			}
-			fmt.Printf("  %02d:00  %s %5d%s\n",
-				e.h, format.Bar(float64(e.count), float64(maxHour), 20),
-				e.count, peak)
-		}
-	}
-
-	// ── Permission Prompts
+	// ── Health & permissions (combined compact section)
 	totalPerm := totalPrompted + totalAuto
-	if totalPerm > 0 {
-		format.Header("🔐  PERMISSION PROMPTS", "─")
-		promptPct := float64(totalPrompted) / float64(totalPerm) * 100
-		fmt.Printf(`
-  Auto-allowed:    %8s (%-.0f%%)
-  Required prompt: %8s (%.0f%%)`+"\n",
-			format.Fmt(totalAuto), 100-promptPct,
-			format.Fmt(totalPrompted), promptPct)
-
-		if len(promptedCmds) > 0 {
-			type pcEntry struct {
-				cmd   string
-				count int
+	if len(sessionData) > 0 || totalPerm > 0 {
+		format.Header("🏥  HEALTH & PERMISSIONS", "─")
+		fmt.Println()
+		if len(sessionData) > 0 {
+			var highGrowth []rptSession
+			totalDur := 0.0
+			for _, s := range sessionData {
+				if s.ctxGrowth > 200 {
+					highGrowth = append(highGrowth, s)
+				}
+				totalDur += s.duration
 			}
-			var pcList []pcEntry
-			for cmd, c := range promptedCmds {
-				pcList = append(pcList, pcEntry{cmd, c})
+			avgDur := totalDur / float64(len(sessionData))
+			marker := "✅"
+			if len(highGrowth) > 0 {
+				marker = "⚠️"
 			}
-			sort.Slice(pcList, func(i, j int) bool { return pcList[i].count > pcList[j].count })
-			if len(pcList) > 5 {
-				pcList = pcList[:5]
+			fmt.Printf("  Sessions %d · avg active %s · bloated %d %s\n",
+				len(sessionData), format.FmtDuration(avgDur), len(highGrowth), marker)
+			if len(highGrowth) > 0 {
+				sort.Slice(highGrowth, func(i, j int) bool {
+					return highGrowth[i].ctxGrowth > highGrowth[j].ctxGrowth
+				})
+				for _, s := range highGrowth[:min3(len(highGrowth), 2)] {
+					fmt.Printf("    %s +%.0f%% ctx · %s · %s\n",
+						s.start.Format("2006-01-02"), s.ctxGrowth,
+						format.FmtDuration(s.duration), truncate(s.project, 32))
+				}
 			}
-			fmt.Println("\n  Top prompted commands:")
-			for _, e := range pcList {
-				fmt.Printf("    %-30s ~%d\n", e.cmd, e.count)
+		}
+		if totalPerm > 0 {
+			promptPct := float64(totalPrompted) / float64(totalPerm) * 100
+			fmt.Printf("  Permission prompts %.0f%% (%s auto · %s prompted)\n",
+				promptPct, format.Fmt(totalAuto), format.Fmt(totalPrompted))
+			if len(promptedCmds) > 0 && promptPct > 10 {
+				type pcEntry struct {
+					cmd   string
+					count int
+				}
+				var pcList []pcEntry
+				for cmd, c := range promptedCmds {
+					pcList = append(pcList, pcEntry{cmd, c})
+				}
+				sort.Slice(pcList, func(i, j int) bool { return pcList[i].count > pcList[j].count })
+				if len(pcList) > 3 {
+					pcList = pcList[:3]
+				}
+				for _, e := range pcList {
+					fmt.Printf("    %-32s ~%d\n", e.cmd, e.count)
+				}
 			}
 		}
 	}
@@ -659,12 +601,14 @@ func Report(args []string) {
 		} else if e.score >= 40 {
 			grade = "🟡"
 		}
-		fmt.Printf("  %s %-22s %5.0f/100  %s\n",
-			grade, e.name, e.score, format.BarWith(e.score, 100, 20, format.ScoreColor(e.score)))
+		fmt.Printf("  %s %-18s %3.0f  %s\n",
+			grade, e.name, e.score,
+			format.BarWith(e.score, 100, 18, format.ScoreColor(e.score)))
 	}
-	fmt.Printf("\n  %-25s %5.0f/100  %s\n", "Overall Score", overall, format.BarWith(overall, 100, 20, format.ScoreColor(overall)))
 	gradeEmoji, gradeText := scoreGrade(overall)
-	fmt.Printf("  %s  Grade: %s\n", gradeEmoji, gradeText)
+	fmt.Printf("\n  %s  Overall %3.0f/100 · %s  %s\n",
+		gradeEmoji, overall, gradeText,
+		format.BarWith(overall, 100, 18, format.ScoreColor(overall)))
 
 	// ── Action Items
 	format.Header("🎯  ACTION ITEMS", "─")
@@ -688,7 +632,7 @@ func Report(args []string) {
 		actions = append(actions, fmt.Sprintf("🟡 Low output (%.1f lines/turn) — consider Plan mode for complex tasks.", linesPerTurn))
 	}
 	for _, e := range projList {
-		if e.p.tools > 10 && e.err > 0.1 {
+		if e.p.tools > 10 && e.err > 10 {
 			actions = append(actions, fmt.Sprintf("🟡 High error rate in %s — check CLAUDE.md and allowlist.", truncate(e.name, 20)))
 			break
 		}

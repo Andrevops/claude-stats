@@ -75,11 +75,23 @@ func Bar(n, maxVal float64, width int) string {
 	return b.String()
 }
 
-// Header prints a section header with styled borders and bold text.
+// Header prints a single-line, rule-underlined section header.
+// The `char` parameter selects the fill style — "═" for top-level titles,
+// "─" for subsections. Width pads the line to a consistent 70 columns.
 func Header(text, char string) {
-	w := 70
-	border := strings.Repeat(char, w)
-	fmt.Printf("\n %s%s%s\n  %s%s%s\n %s%s%s\n", Dim, border, Reset, Bold, text, Reset, Dim, border, Reset)
+	const w = 70
+	// visibleLen ignores ANSI escapes; text here is plain.
+	visible := len([]rune(text))
+	// Account for `── ` prefix (3 runes) and a trailing space before the fill.
+	pad := w - visible - 5
+	if pad < 3 {
+		pad = 3
+	}
+	fill := strings.Repeat(char, pad)
+	fmt.Printf("\n  %s%s %s%s%s %s%s%s\n",
+		Dim, strings.Repeat(char, 2), Reset,
+		Bold, text, Reset,
+		Dim, fill+Reset)
 }
 
 // FmtTokens formats token counts as human-readable (e.g., 1.2M, 45K).

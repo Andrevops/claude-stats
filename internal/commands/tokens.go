@@ -89,7 +89,7 @@ func Tokens(args []string) {
 		}
 
 		session.ScanLines(f, func(line session.LogLine) {
-			if line.Type == "human" || line.Type == "assistant" {
+			if session.IsConversation(line) {
 				grandMessages++
 				p.messages++
 			}
@@ -180,33 +180,22 @@ func Tokens(args []string) {
 		return
 	}
 
-	// ── Summary
-	format.Header(fmt.Sprintf("🔢  CLAUDE CODE TOKEN USAGE — %s", label), "═")
+	format.Header(fmt.Sprintf("🔢  TOKEN USAGE — %s", label), "═")
 	sessStr := fmt.Sprintf("%d", mainSessions)
 	if subagentCount > 0 {
-		sessStr = fmt.Sprintf("%d (+%d subagents)", mainSessions, subagentCount)
+		sessStr = fmt.Sprintf("%d (+%d sub)", mainSessions, subagentCount)
 	}
-	fmt.Printf(`
-  Sessions:  %-20s Messages:    %s
-  Projects:  %-20d Tool calls:  %s
-
-  Input tokens:          %14s
-  Output tokens:         %14s
-  Cache read tokens:     %14s
-  Cache creation tokens: %14s
-  %s
-  TOTAL TOKENS:          %14s
-  ESTIMATED COST:        %14s`+"\n",
-		sessStr, format.Fmt(grandMessages),
-		len(proj), format.Fmt(grandTools),
-		format.Fmt(grand.input),
-		format.Fmt(grand.output),
-		format.Fmt(grand.cacheRead),
-		format.Fmt(grand.cacheCreate),
-		repeat("─", 42),
-		format.Fmt(totalTokens),
-		fmt.Sprintf("$%.2f", totalCost),
-	)
+	fmt.Printf("\n  %-12s%-18s %-12s%s\n",
+		"Sessions", sessStr, "Messages", format.Fmt(grandMessages))
+	fmt.Printf("  %-12s%-18d %-12s%s\n",
+		"Projects", len(proj), "Tool calls", format.Fmt(grandTools))
+	fmt.Printf("\n  Input %s · Output %s · Cache r/w %s / %s\n",
+		format.FmtTokens(grand.input),
+		format.FmtTokens(grand.output),
+		format.FmtTokens(grand.cacheRead),
+		format.FmtTokens(grand.cacheCreate))
+	fmt.Printf("  Total %s tokens · Est. cost $%.2f\n",
+		format.FmtTokens(totalTokens), totalCost)
 
 	// ── By Project
 	format.Header("📁  BY PROJECT", "─")

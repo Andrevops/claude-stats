@@ -164,14 +164,11 @@ func Tools(args []string) {
 		return
 	}
 
-	// ── Summary
-	format.Header(fmt.Sprintf("🔧  CLAUDE CODE TOOL ANALYTICS — %s", label), "═")
-	fmt.Printf(`
-  Sessions: %-12d Total calls:  %s
-  Errors:   %s (%s)     Avg/session:  %d`+"\n",
-		sessionCount, format.Fmt(totalCalls),
-		format.Fmt(totalErrors), format.Pct(totalErrors, totalCalls),
-		totalCalls/sessionCount)
+	format.Header(fmt.Sprintf("🔧  TOOL ANALYTICS — %s", label), "═")
+	fmt.Printf("\n  %-10s%-14d %-10s%s (avg %d/session)\n",
+		"Sessions", sessionCount, "Calls", format.Fmt(totalCalls), totalCalls/sessionCount)
+	fmt.Printf("  %-10s%s (%s)\n",
+		"Errors", format.Fmt(totalErrors), format.Pct(totalErrors, totalCalls))
 
 	// ── Workflow Balance
 	format.Header("⚖️  WORKFLOW BALANCE", "─")
@@ -214,11 +211,13 @@ func Tools(args []string) {
 			continue
 		}
 		errRate := "—"
+		pct := 0
 		if e.s.errors > 0 {
-			errRate = fmt.Sprintf("%d%%", e.s.errors*100/e.s.calls)
+			pct = e.s.errors * 100 / e.s.calls
+			errRate = fmt.Sprintf("%d%%", pct)
 		}
 		flag := ""
-		if e.s.errors > 0 {
+		if pct >= 10 {
 			flag = " ⚠️"
 		}
 		fmt.Printf("  %-22s %6d %5d %6s  %s%s\n",

@@ -107,7 +107,7 @@ func Heatmap(args []string) {
 			hour := localDT.Hour()
 			dateStr := localDT.Format("2006-01-02")
 
-			if (line.Type == "human" || line.Type == "assistant") && ok {
+			if session.IsConversation(line) && ok {
 				gridMessages[dow][hour]++
 				hourlyMessages[hour]++
 				dailyMessages[dateStr]++
@@ -257,31 +257,17 @@ func Heatmap(args []string) {
 	fmt.Printf("              %s$0   %s<20%% %s<45%% %s<75%% %speak\n",
 		config.Heat[0], config.Heat[1], config.Heat[2], config.Heat[3], config.Heat[4])
 
-	// ── Hourly Summary
-	format.Header(fmt.Sprintf("⏰  HOURLY ACTIVITY (%s)", tzLabel), "─")
-	fmt.Println()
-	maxHourly := 0
+	// Compute peak hour (used later in insights; hourly table itself is
+	// redundant with the grid above and has been dropped).
 	peakHour := 0
+	maxHourly := 0
 	for h := 0; h < 24; h++ {
 		if hourlyMessages[h] > maxHourly {
 			maxHourly = hourlyMessages[h]
 			peakHour = h
 		}
 	}
-	for h := 0; h < 24; h++ {
-		msgs := hourlyMessages[h]
-		tools := hourlyTools[h]
-		if msgs == 0 && tools == 0 {
-			continue
-		}
-		barStr := format.Bar(float64(msgs), float64(maxHourly), 35)
-		peak := ""
-		if h == peakHour {
-			peak = " ← PEAK"
-		}
-		fmt.Printf("  %02d:00  %s  %5d msgs  %4d tools%s\n",
-			h, barStr, msgs, tools, peak)
-	}
+	_ = hourlyTools
 
 	// ── Daily Summary
 	format.Header("📅  DAILY SUMMARY", "─")

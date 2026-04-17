@@ -60,11 +60,13 @@ func collectPeriod(targetDates []string) *periodStats {
 		}
 
 		session.ScanLines(f, func(line session.LogLine) {
-			if line.Type == "assistant" || line.Type == "human" || line.Type == "user" {
+			if session.IsConversation(line) {
 				ps.messages++
 			}
-			if line.Type == "human" || line.Type == "user" {
+			if session.IsUserTurn(line) {
 				ps.turns++
+			}
+			if line.Type == "user" {
 				for _, tr := range session.ParseToolResults(line.Message) {
 					if tr.IsError {
 						ps.errors++
@@ -262,8 +264,9 @@ func Trends(args []string) {
 		return
 	}
 
-	// ── Header
-	format.Header(fmt.Sprintf("📈  TRENDS — %s vs %s", curLabel, prevLabel), "═")
+	// ── Header (keep title short — dates are repeated in the comparison tables)
+	format.Header(fmt.Sprintf("📈  TRENDS — %s", curLabel), "═")
+	fmt.Printf("\n  Comparing against: %s\n", prevLabel)
 
 	// ── Overview comparison
 	format.Header("📋  OVERVIEW", "─")

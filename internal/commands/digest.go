@@ -105,7 +105,7 @@ func collectDigestData(files []string) *digestData {
 			localDT, ok := dates.ParseTS(line.Timestamp)
 			msgType := line.Type
 
-			if msgType == "human" || msgType == "assistant" || msgType == "user" {
+			if session.IsConversation(line) {
 				p.messages++
 				d.totalMessages++
 				if ok {
@@ -245,15 +245,15 @@ func printDigest(data *digestData, label string, targetDates []string) {
 	net := totalWritten + totalAdded - totalRemoved
 	tzLabel := dates.TZLabel()
 
-	fmt.Println()
-	fmt.Println("  ╔══════════════════════════════════════════════════════════════════╗")
-	fmt.Printf("  ║  📓  CLAUDE CODE — %-47s ║\n", truncate(label, 47))
-	fmt.Println("  ╚══════════════════════════════════════════════════════════════════╝")
-	fmt.Printf(`
-  Projects: %-10d Jira tickets: %-10d Messages: %d
-  Files:    %-10d Branches:     %-10d Net lines: %s`+"\n",
-		len(data.projData), len(data.allJira), data.totalMessages,
-		len(allFiles), len(data.allBranches), format.Fmt(net))
+	format.Header(fmt.Sprintf("📓  DIGEST — %s", label), "═")
+	fmt.Printf("\n  %-10s%-15d %-10s%-10d %-10s%d\n",
+		"Projects", len(data.projData),
+		"Tickets", len(data.allJira),
+		"Messages", data.totalMessages)
+	fmt.Printf("  %-10s%-15d %-10s%-10d %-10s%s\n",
+		"Files", len(allFiles),
+		"Branches", len(data.allBranches),
+		"Net lines", format.Fmt(net))
 
 	if len(data.allJira) > 0 {
 		format.Header("🎫  JIRA TICKETS", "─")
