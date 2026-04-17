@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.0 (2026-04-17)
+
+### Features
+
+- fix stats counting bugs and compact report layouts
+
+[Full changelog](https://github.com/Andrevops/claude-stats/compare/v0.7.0...v0.8.0)
+
 ## v0.7.0 (2026-04-10)
 
 ### Features
